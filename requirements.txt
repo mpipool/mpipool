@@ -1,0 +1,5 @@
+setuptools>=34.0.0
+pip>=9.0.0
+schwimmbad
+mpi4py
+dill
