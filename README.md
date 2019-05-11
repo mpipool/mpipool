@@ -27,6 +27,12 @@ sums = p.map(add, [(ai, bi) for ai in range(10) for bi in range(10)])
 assert len(sums) == 100
 assert sums[0] == 0
 assert sums[-1] == 18
+
+sums = p.map(add, [(ai, bi) for ai in range(10) for bi in range(10)])
+
+assert len(sums) == 100
+assert sums[0] == 0
+assert sums[-1] == 18
 ```
 
 The program must be run on the commandline like:
@@ -40,8 +46,7 @@ Currently `mpipool.Pool` only implements a `map` method.
 Contrary to the `MPIPool` implementation of
 [schwimmbad](https://schwimmbad.readthedocs.io/en/latest/)
 the statements after `from mpipool import Pool` are only executed
-by the task with rank `0`. As such multiple `pool.map` calls
-are supported.
+by the task with rank `0`.
 
 
 # Credits
