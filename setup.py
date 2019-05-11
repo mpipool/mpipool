@@ -38,9 +38,14 @@ The program must be run on the commandline like:
 ```
 $ mpirun -n 4 python example.py
 ```
+
+# Credits
+
+`mpipool` uses of the `MPIPool` implementation of
+[schwimmbad](https://schwimmbad.readthedocs.io/en/latest/) library.
 """
 
-VERSION = "0.1.3"
+VERSION = "0.0.1"
 
 
 setup(
