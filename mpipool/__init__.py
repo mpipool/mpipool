@@ -5,6 +5,6 @@ __credits__ = "ETH Zurich, Scientific IT Services"
 
 import pkg_resources
 
-from .mpipool import Pool
+from .mpipool import Pool  # noqa
 
 __version__ = pkg_resources.require(__package__)[0].version
