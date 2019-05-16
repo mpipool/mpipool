@@ -13,7 +13,7 @@ LONG_DESCRIPTION = ""
 if sys.argv[1] == "sdist":
     LONG_DESCRIPTION = open("README.md").read()
 
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 
 
 setup(

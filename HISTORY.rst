@@ -3,6 +3,11 @@
 History
 -------
 
+0.2.0 (2019-05-16)
+++++++++++++++++++
+
+* Moved initialization of walkers to Pool.__init__
+
 0.1.1 (2019-05-16)
 ++++++++++++++++++
 
