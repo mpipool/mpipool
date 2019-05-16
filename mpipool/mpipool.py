@@ -15,14 +15,6 @@ def runs_with_mpi():
     )
 
 
-if not runs_with_mpi():
-    raise RuntimeError("you must run this programm using mpirun or mpiexec.")
-else:
-    # put the import in the branch to avoid isort / black shuffling
-    # of imports:
-    from mpi4py import MPI
-
-
 def eval_f(payload):
     """helper function to unpack the serialised function and its arguments"""
     f_serialised, args = payload
@@ -32,6 +24,35 @@ def eval_f(payload):
 
 
 class Pool(MPIPool):
+    def __init__(self):
+        if not runs_with_mpi():
+            raise RuntimeError("you must run this programm using mpirun or mpiexec.")
+
+        MPIPool.__init__(self)
+
+        atexit.register(lambda: MPIPool.close(self))
+
+        if self.rank > 0:
+            # workers branch here and wait for work
+            try:
+                self.wait()
+            except:
+                traceback.print_exc()
+                sys.stdout.flush()
+                sys.stderr.flush()
+                # shutdown all mpi tasks:
+                from mpi4py import MPI
+
+                MPI.COMM_WORLD.Abort()
+            # without the sys.exit below, programm execution would continue after the clients
+            # 'import mpipool' instruction:
+            sys.exit(0)
+
+    def close(self):
+        # noop close, would make client code hang, we finally close the pool
+        # at exit of the Python interpreter, see __init__ above
+        pass
+
     def map(self, f, args):
         # we must serialise f, as the workers branch below, so that the
         # f supplied by the client is not defined in the workers global
@@ -39,22 +60,3 @@ class Pool(MPIPool):
         f_serialised = dill.dumps(f)
         payloads = [(f_serialised, arg) for arg in args]
         return MPIPool.map(self, eval_f, payloads)
-
-
-pool = Pool()
-
-atexit.register(pool.close)
-
-if pool.rank > 0:
-    # workers branch here and wait for work
-    try:
-        pool.wait()
-    except:
-        traceback.print_exc()
-        sys.stdout.flush()
-        sys.stderr.flush()
-        # shutdown all mpi tasks:
-        MPI.COMM_WORLD.Abort()
-    # without the sys.exit below, programm execution would continue after the clients
-    # 'import mpipool' instruction:
-    sys.exit(0)
