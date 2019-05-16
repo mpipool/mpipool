@@ -37,6 +37,7 @@ class Pool(MPIPool):
             try:
                 self.wait()
             except:
+                print("worker with rank {} crashed".format(self.rank).center(80, "="))
                 traceback.print_exc()
                 sys.stdout.flush()
                 sys.stderr.flush()
