@@ -3,6 +3,11 @@
 History
 -------
 
+0.2.1 (2019-05-21)
+++++++++++++++++++
+
+* Better output in traceback when client raises and exception.
+
 0.2.0 (2019-05-16)
 ++++++++++++++++++
 
