@@ -51,5 +51,6 @@ docs/_build
 # vim backup files
 **/.*.sw?
 
-# virutal environments
+# virtual environments
 venv*
+.python-version

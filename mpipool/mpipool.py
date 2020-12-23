@@ -4,15 +4,8 @@ import sys
 import traceback
 
 import dill
+from mpi4py import MPI
 from schwimmbad import MPIPool
-
-
-def runs_with_mpi():
-    return any(
-        n.startswith(prefix)
-        for n in os.environ.keys()
-        for prefix in ("MPIEXEC_", "OMPI_COMM_WORLD_")
-    )
 
 
 def eval_f(payload):
@@ -23,8 +16,8 @@ def eval_f(payload):
 
 class Pool(MPIPool):
     def __init__(self):
-        if not runs_with_mpi():
-            raise RuntimeError("you must run this programm using mpirun or mpiexec.")
+        if MPI.COMM_WORLD.Get_size() < 2:
+            raise RuntimeError("At least 2 MPI processes are required to open a pool.")
 
         MPIPool.__init__(self)
 
@@ -40,8 +33,6 @@ class Pool(MPIPool):
                 sys.stdout.flush()
                 sys.stderr.flush()
                 # shutdown all mpi tasks:
-                from mpi4py import MPI
-
                 MPI.COMM_WORLD.Abort()
             # without the sys.exit below, programm execution would continue after the clients
             # 'import mpipool' instruction:
