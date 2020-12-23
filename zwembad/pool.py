@@ -19,9 +19,9 @@ class Pool(MPIPool):
         if MPI.COMM_WORLD.Get_size() < 2:
             raise RuntimeError("At least 2 MPI processes are required to open a pool.")
 
-        MPIPool.__init__(self)
+        super().__init__()
 
-        atexit.register(lambda: MPIPool.close(self))
+        atexit.register(lambda: super().close())
 
         if self.rank > 0:
             # workers branch here and wait for work
@@ -48,5 +48,5 @@ class Pool(MPIPool):
         # f supplied by the client is not defined in the workers global
         # namespace:
         f_serialised = dill.dumps(f)
-        payloads = [(f_serialised, arg) for arg in zip(args)]
+        payloads = [(f_serialised, job_args) for job_args in zip(args)]
         return MPIPool.map(self, eval_f, payloads)

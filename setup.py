@@ -5,32 +5,33 @@ import sys
 
 from setuptools import find_packages, setup
 
-REQUIRES = ["schwimmbad", "mpi4py", "dill"]
+requires = ["schwimmbad", "mpi4py", "dill"]
 
+with open("zwembad/__init__.py", "r") as f:
+    for line in f.readlines():
+        if "__version__ = " in line:
+            exec(line.strip())
+            break
+    else:
+        raise Exception("Missing version specification in __init__.py")
 
-LONG_DESCRIPTION = ""
-
-if sys.argv[1] == "sdist":
-    LONG_DESCRIPTION = open("README.md").read()
-
-VERSION = "0.2.1"
-
+with open("README.md") as f:
+    long_description = f.read()
 
 setup(
-    name="mpipool",
-    version=VERSION,
-    description="MPI Pool similar to multiprocessing",
-    long_description=LONG_DESCRIPTION,
+    name="zwembad",
+    version=__version__,
+    description="MPI Pool similar to futures",
+    long_description=long_description,
     long_description_content_type="text/markdown",
     author="Uwe Schmitt",
-    author_email="uwe.schmitt@id.ethz.ch",
-    url="https://gitlab.com/uweschmitt/mpipool",
-    packages=find_packages(include=["mpipool"]),
+    author_email="robingilbert.deschepper@unipv.it",
+    maintainer="Robin De Schepper",
+    url="https://github.com/Helveg/zwembad",
+    packages=find_packages(),
     include_package_data=True,
-    install_requires=REQUIRES,
-    license="Proprietary",
-    zip_safe=False,
-    keywords="mpipool",
+    install_requires=requires,
+    keywords="mpipool zwembad",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
@@ -40,5 +41,7 @@ setup(
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
     ],
 )
