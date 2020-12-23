@@ -18,8 +18,6 @@ def runs_with_mpi():
 def eval_f(payload):
     """helper function to unpack the serialised function and its arguments"""
     f_serialised, args = payload
-    if not isinstance(args, tuple):
-        args = (args,)
     return dill.loads(f_serialised)(*args)
 
 
@@ -54,10 +52,10 @@ class Pool(MPIPool):
         # at exit of the Python interpreter, see __init__ above
         pass
 
-    def map(self, f, args):
+    def map(self, f, *args):
         # we must serialise f, as the workers branch below, so that the
         # f supplied by the client is not defined in the workers global
         # namespace:
         f_serialised = dill.dumps(f)
-        payloads = [(f_serialised, arg) for arg in args]
+        payloads = [(f_serialised, arg) for arg in zip(args)]
         return MPIPool.map(self, eval_f, payloads)
