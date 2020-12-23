@@ -45,12 +45,11 @@ Currently `mpipool.Pool` only implements a `map` method.
 
 Contrary to the `MPIPool` implementation of
 [schwimmbad](https://schwimmbad.readthedocs.io/en/latest/)
-the statements after `from mpipool import Pool` are only executed
-by the task with rank `0`.
+the statements after `pool = Pool()` are only executed
+by the MPI process with rank `0`.
 
 
 # Credits
 
 `mpipool` uses of the `MPIPool` implementation of
 [schwimmbad](https://schwimmbad.readthedocs.io/en/latest/) library.
-
