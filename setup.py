@@ -5,7 +5,7 @@ import sys
 
 from setuptools import find_packages, setup
 
-requires = ["schwimmbad", "mpi4py", "dill"]
+requires = ["mpi4py>=3.0.3", "dill>=0.3.3"]
 
 with open("zwembad/__init__.py", "r") as f:
     for line in f.readlines():
@@ -21,17 +21,16 @@ with open("README.md") as f:
 setup(
     name="zwembad",
     version=__version__,
-    description="MPI Pool similar to futures",
+    description="Parallel MPIPoolExecutor implementing the concurrent.futures interface",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    author="Uwe Schmitt",
+    author="Robin De Schepper",
     author_email="robingilbert.deschepper@unipv.it",
-    maintainer="Robin De Schepper",
     url="https://github.com/Helveg/zwembad",
     packages=find_packages(),
     include_package_data=True,
     install_requires=requires,
-    keywords="mpipool zwembad",
+    keywords="mpi pool mpipool zwembad",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",

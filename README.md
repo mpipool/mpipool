@@ -1,55 +1,40 @@
+[![Documentation Status](https://readthedocs.org/projects/zwembad/badge/?version=latest)](https://zwembad.readthedocs.io/en/latest/?badge=latest)
+
 # About
 
-`mpipool` offers a `Pool` class similar `multiprocessing.Pool`
-from the standard library.
-
-`mpipool` uses `MPIPool` implementation of
-[schwimmbad](https://schwimmbad.readthedocs.io/en/latest/) library
-and circumvents some of its limitations:
-
-- A series of `mpipool.Pool.map` calls do not crash,
-- In case a worker raises an exception, the MPI
-  tasks are shut down properly so that the full program halts and does
-  not hang.
+`zwembad` offers an `MPIPoolExecutor` class, an implementation of the
+`concurrent.futures.Executor` class of the standard library.
 
 # Example usage
 
 ```
-from mpipool import Pool
+from zwembad import MPIPoolExecutor
+from mpi4py import MPI
 
-def add(a, b):
-    return a + b
+pool = MPIPoolExecutor()
 
-p = Pool()
+def menial_task(x):
+    return x ** MPI.COMM_WORLD.Get_rank()
 
-sums = p.map(add, [(ai, bi) for ai in range(10) for bi in range(10)])
+fs = [pool.submit(menial_task, i) for i in range(100)]
 
-assert len(sums) == 100
-assert sums[0] == 0
-assert sums[-1] == 18
-
-sums = p.map(add, [(ai, bi) for ai in range(10) for bi in range(10)])
-
-assert len(sums) == 100
-assert sums[0] == 0
-assert sums[-1] == 18
+print([f.result() for f in fs])
 ```
 
-The program must be run on the commandline like:
+You'll see that some results will have exponentiated either by 1, 2, ..., n depending on
+which worker they were sent to.
+
+Different from `mpi4py`s own `MPIPoolExecutor` zwembad is designed to function without
+`MPI.Spawn()` for cases where this approach isn't feasible, like supercomputers where
+`MPI.Spawn` is usually deliberatly not implemented (for example CrayMPI).
+
+Therefor the pool can only use MPI processes that are spawned when the MPI world is
+initialised and must be run from the command line using an MPI helper such as `mpirun`,
+`mpiexec` or SLURM's `srun`:
 
 ```
 $ mpirun -n 4 python example.py
 ```
 
-Currently `mpipool.Pool` only implements a `map` method.
-
-Contrary to the `MPIPool` implementation of
-[schwimmbad](https://schwimmbad.readthedocs.io/en/latest/)
-the statements after `pool = Pool()` are only executed
-by the MPI process with rank `0`.
-
-
-# Credits
-
-`mpipool` uses of the `MPIPool` implementation of
-[schwimmbad](https://schwimmbad.readthedocs.io/en/latest/) library.
+Note: Currently `zwembad.MPIPoolExecutor` only implements a `submit` method and lacks a
+parallel `map` method.
