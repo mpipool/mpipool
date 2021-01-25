@@ -18,7 +18,12 @@ def menial_task(x):
 
 fs = [pool.submit(menial_task, i) for i in range(100)]
 
+# Wait for all of the results and print them
 print([f.result() for f in fs])
+
+# A shorter notation to dispatch the same function with different args
+# and to wait for all results is the `.map` method:
+results = pool.map(menial_task, range(100))
 ```
 
 You'll see that some results will have exponentiated either by 1, 2, ..., n depending on
@@ -35,6 +40,3 @@ initialised and must be run from the command line using an MPI helper such as `m
 ```
 $ mpirun -n 4 python example.py
 ```
-
-Note: Currently `zwembad.MPIPoolExecutor` only implements a `submit` method and lacks a
-parallel `map` method.

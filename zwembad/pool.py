@@ -62,8 +62,9 @@ class MPIPoolExecutor(concurrent.futures.Executor):
                 sys.stdout.flush()
                 sys.stderr.flush()
                 MPI.COMM_WORLD.Abort()
-            finally:
-                sys.exit(0)
+            # Workers who's been told to quit work resume code here and return out of the
+            # pool constructor
+            return
 
         # The master continues initialization here
         self._workers = set(range(self._comm.size))
