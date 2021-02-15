@@ -182,35 +182,45 @@ class MPIPoolExecutor(concurrent.futures.Executor):
         if self.is_master():
             return self
         else:
-            return AutoExitObject()
+            return ExitObject()
 
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_type is WorkerExitSuiteSignal and self.is_worker():
             return True
 
     def workers_exit(self):
-        # This code makes workers exit the pool suite after the pool closes so
-        # that they join up with the master after the suite.
-        if self.is_worker():
-            raise WorkerExitSuiteSignal()
+        # The master shouldn't do anything when workers are asked to exit,
+        # but workers should have been given a n "exit" object by the context
+        # manager, so raise an error if this function is called on by a worker.
+        if self.is_master():
+            return
+        raise RuntimeError("Worker threads should have been handed exit object")
 
 
-class AutoExitObject:
+class ExitObject:
     """
     Object returned from the context manager to all non-master processes. Any
     attribute access on this object will raise a ``WorkerExitSuiteSignal`` so
     that the context is exited.
     """
-    def __init__(self):
-        self.__dict__ = {}
+
+    def workers_exit(self):
+        raise WorkerExitSuiteSignal()
 
     def __getattr__(self, attr):
-        raise WorkerExitSuiteSignal()
+        raise PoolGuardError("Please use the `workers_exit` function at the start of the pool context.")
 
 
 class WorkerExitSuiteSignal(Exception):
     """
     This signal is raised when a worker needs to exit before executing the suite
     of a ``with`` statement that only the master should execute.
+    """
+    pass
+
+class PoolGuardError(Exception):
+    """
+    This error is raised if a user forgets to guard their pool context with a
+    :method:`~.pool.MPIPoolExecutor.workers_exit` call.
     """
     pass
