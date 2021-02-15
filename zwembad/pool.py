@@ -177,3 +177,40 @@ class MPIPoolExecutor(concurrent.futures.Executor):
     @property
     def idling(self):
         return len(self._idle_workers)
+
+    def __enter__(self):
+        if self.is_master():
+            return self
+        else:
+            return AutoExitObject()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is WorkerExitSuiteSignal and self.is_worker():
+            return True
+
+    def workers_exit(self):
+        # This code makes workers exit the pool suite after the pool closes so
+        # that they join up with the master after the suite.
+        if self.is_worker():
+            raise WorkerExitSuiteSignal()
+
+
+class AutoExitObject:
+    """
+    Object returned from the context manager to all non-master processes. Any
+    attribute access on this object will raise a ``WorkerExitSuiteSignal`` so
+    that the context is exited.
+    """
+    def __init__(self):
+        self.__dict__ = {}
+
+    def __getattr__(self, attr):
+        raise WorkerExitSuiteSignal()
+
+
+class WorkerExitSuiteSignal(Exception):
+    """
+    This signal is raised when a worker needs to exit before executing the suite
+    of a ``with`` statement that only the master should execute.
+    """
+    pass
