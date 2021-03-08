@@ -5,6 +5,7 @@ import sys
 import traceback
 import queue
 import dill
+import warnings
 from mpi4py import MPI
 
 MPI.pickle.__init__(dill.dumps, dill.loads)
@@ -194,6 +195,7 @@ class MPIPoolExecutor(concurrent.futures.Executor):
         # manager, so raise an error if this function is called on by a worker.
         if self.is_master():
             return
+        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
         raise RuntimeError("Worker threads should have been handed exit object")
 
 
@@ -203,6 +205,13 @@ class ExitObject:
     attribute access on this object will raise a ``WorkerExitSuiteSignal`` so
     that the context is exited.
     """
+    def is_master(self):
+        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
+        return False
+
+    def is_worker(self):
+        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
+        return True
 
     def workers_exit(self):
         raise WorkerExitSuiteSignal()
