@@ -109,7 +109,8 @@ class MPIPoolExecutor(concurrent.futures.Executor):
         """
         # Submit all sets of parameters in the given iterables to the pool and collect
         # the results in a list.
-        return [self.submit(fn, *args).result() for args in zip(*iterables)]
+        fns = [self.submit(fn, *args) for args in zip(*iterables)]
+        return [fn.result() for fn in fns]
 
     def _schedule(self, job, handover=None):
         """
