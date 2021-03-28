@@ -5,7 +5,7 @@ import sys
 
 from setuptools import find_packages, setup
 
-requires = ["mpi4py>=3.0.3", "dill>=0.3.3"]
+requires = ["mpi4py>=3.0.3", "dill>=0.3.3", "errr>=1.0.0"]
 
 with open("mpipool/__init__.py", "r") as f:
     for line in f.readlines():

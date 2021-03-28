@@ -7,6 +7,7 @@ import queue
 import dill
 import warnings
 from mpi4py import MPI
+from .exceptions import *
 
 MPI.pickle.__init__(dill.dumps, dill.loads)
 
@@ -51,6 +52,7 @@ class MPIExecutor(concurrent.futures.Executor):
         self._master = master
         self._rank = self._comm.Get_rank()
         self._queue = queue.SimpleQueue()
+        self._open = True
 
         atexit.register(lambda: MPIExecutor.shutdown(self))
 
@@ -74,7 +76,7 @@ class MPIExecutor(concurrent.futures.Executor):
         self._size = self._comm.Get_size() - 1
 
         if self._size == 0:
-            raise RuntimeError("MPIExecutors require at least 2 running MPI processes.")
+            raise MPIProcessError("MPIExecutor requires at least 2 MPI processes.")
 
     def _work(self):
         while True:
@@ -163,8 +165,10 @@ class MPIExecutor(concurrent.futures.Executor):
         if self.is_worker():
             return
 
-        for worker in self._workers:
-            self._comm.send(None, worker, 0)
+        if self._open:
+            self._open = False
+            for worker in self._workers:
+                self._comm.send(None, worker, 0)
 
     def is_master(self):
         return self._rank == self._master
@@ -192,12 +196,11 @@ class MPIExecutor(concurrent.futures.Executor):
 
     def workers_exit(self):
         # The master shouldn't do anything when workers are asked to exit,
-        # but workers should have been given a n "exit" object by the context
+        # but workers should have been given an "exit" object by the context
         # manager, so raise an error if this function is called on by a worker.
         if self.is_master():
             return
-        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
-        raise RuntimeError("Worker threads should have been handed exit object")
+        raise WorkerExitSuiteSignal()
 
 
 class ExitObject:
