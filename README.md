@@ -2,10 +2,16 @@
 
 # About
 
-`mpipool` offers an `MPIExecutor` class, an implementation of the
-`concurrent.futures.Executor` class of the standard library.
+`mpipool` offers MPI based parallel execution of tasks through implementations of
+Python's standard library interfaces such as `multiprocessing` and `concurrent.futures`.
 
-# Example usage
+# MPIExecutor
+
+Executors are objects that return Futures when tasks are submitted. The `MPIExecutor` runs
+each task on an MPI process and listens for its reply on a thread that controls the Future
+object that was returned to the user.
+
+## Example usage
 
 ```
 from mpipool import MPIExecutor
@@ -37,14 +43,37 @@ workers from running the master code using the `pool.workers_exit()` call. As a
 fail safe any attribute access on the `pool` object made from workers will
 result in them exiting anyway.
 
-The `MPIExecutor` of mpipool is designed to function without `MPI.Spawn()`
-for cases where this approach isn't feasible, like supercomputers where
-`MPI.Spawn` is deliberatly not implemented (for example CrayMPI).
-
-Therefor the pool can only use MPI processes that are spawned when the MPI world
-is initialised and must be run from the command line using an MPI helper such as
-`mpirun`, `mpiexec` or SLURM's `srun`:
+**Note:** Use MPI helpers such as `mpirun`, `mpiexec` or SLURM's `srun`:
 
 ```
 $ mpirun -n 4 python example.py
+```
+
+# MPIPool
+
+Pools execute tasks using worker processes. Use `apply` or `map` to block for task results
+or `apply_async` and `map_async` to obtain an `AsyncResult` that you can check or wait for
+asynchronously.
+
+## Example usage
+
+```
+from mpipool import MPIPool
+from mpi4py import MPI
+
+def menial_task(x):
+  return x ** MPI.COMM_WORLD.Get_rank()
+
+with MPIPool() as pool:
+  pool.workers_exit()
+  print("Only the master executes this code.")
+
+  # Block for results
+  results = pool.map(menial_task, range(100))
+
+  # Async
+  result = pool.map_async(menial_task, range(100))
+  print("Done already?", result.ready())
+
+print("All processes join again here.")
 ```
