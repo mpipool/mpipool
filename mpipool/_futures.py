@@ -39,7 +39,7 @@ class _JobThread(threading.Thread):
         self._worker = worker
 
 
-class MPIPoolExecutor(concurrent.futures.Executor):
+class MPIExecutor(concurrent.futures.Executor):
     """
     MPI based Executor. Will use all available MPI processes to execute submissions to the
     pool. The MPI process with rank 0 will continue while all other ranks halt and
@@ -52,7 +52,7 @@ class MPIPoolExecutor(concurrent.futures.Executor):
         self._rank = self._comm.Get_rank()
         self._queue = queue.SimpleQueue()
 
-        atexit.register(lambda: MPIPoolExecutor.shutdown(self))
+        atexit.register(lambda: MPIExecutor.shutdown(self))
 
         if not self.is_master():
             # The workers enter their workloop here.
@@ -74,7 +74,7 @@ class MPIPoolExecutor(concurrent.futures.Executor):
         self._size = self._comm.Get_size() - 1
 
         if self._size == 0:
-            raise RuntimeError("MPIPoolExecutors require at least 2 running MPI processes.")
+            raise RuntimeError("MPIExecutors require at least 2 running MPI processes.")
 
     def _work(self):
         while True:
@@ -231,6 +231,6 @@ class WorkerExitSuiteSignal(Exception):
 class PoolGuardError(Exception):
     """
     This error is raised if a user forgets to guard their pool context with a
-    :method:`~.pool.MPIPoolExecutor.workers_exit` call.
+    :method:`~.pool.MPIExecutor.workers_exit` call.
     """
     pass
