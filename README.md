@@ -1,20 +1,20 @@
-[![Documentation Status](https://readthedocs.org/projects/zwembad/badge/?version=latest)](https://zwembad.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/mpipool/badge/?version=latest)](https://mpipool.readthedocs.io/en/latest/?badge=latest)
 
 # About
 
-`zwembad` offers an `MPIPoolExecutor` class, an implementation of the
+`mpipool` offers an `MPIExecutor` class, an implementation of the
 `concurrent.futures.Executor` class of the standard library.
 
 # Example usage
 
 ```
-from zwembad import MPIPoolExecutor
+from mpipool import MPIExecutor
 from mpi4py import MPI
 
 def menial_task(x):
   return x ** MPI.COMM_WORLD.Get_rank()
 
-with MPIPoolExecutor() as pool:
+with MPIExecutor() as pool:
   pool.workers_exit()
   print("Only the master executes this code.")
 
@@ -37,7 +37,7 @@ workers from running the master code using the `pool.workers_exit()` call. As a
 fail safe any attribute access on the `pool` object made from workers will
 result in them exiting anyway.
 
-The `MPIPoolExecutor` of zwembad is designed to function without `MPI.Spawn()`
+The `MPIExecutor` of mpipool is designed to function without `MPI.Spawn()`
 for cases where this approach isn't feasible, like supercomputers where
 `MPI.Spawn` is deliberatly not implemented (for example CrayMPI).
 

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/../..'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'Zwembad'
+project = 'mpipool'
 copyright = '2021, Robin De Schepper'
 author = 'Robin De Schepper'
 
