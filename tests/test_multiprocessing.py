@@ -1,17 +1,6 @@
 import unittest
 import mpipool
 import multiprocessing
-import atexit
-
-_test_pool = None
-
-def setUpModule():
-    global _test_pool
-    _test_pool = mpipool.MPIPool()
-
-def tearDownModule():
-    global _test_pool
-    _test_pool.close()
 
 def fx(x):
     return x * 2
@@ -29,11 +18,11 @@ def master(f):
 class TestInterface(unittest.TestCase):
     def setUp(self):
         self.base = multiprocessing.Pool(processes=4)
-        self.pool = _test_pool
+        self.pool = mpipool.MPIPool()
 
     def tearDown(self):
         self.base.close()
-        # self.pool.close()
+        self.pool.close()
 
     @master
     def test_apply(self):
@@ -57,7 +46,6 @@ class TestInterface(unittest.TestCase):
         def _assert(base, pool):
             self.assertEqual(base.get(), pool.get())
         self.compare("map_async", fx, range(55), _assert=_assert)
-        # self.compare_exc("apply_async", fx, (10, 2), _trigger=lambda r: r.get())
 
     def compare(self, attr, *args, _assert=None, **kwargs):
         with self.subTest(attr=attr, sig=(args, kwargs)):
@@ -69,10 +57,16 @@ class TestInterface(unittest.TestCase):
                 _assert(base_r, pool_r)
 
     def compare_exc(self, attr, *args, _trigger=None, **kwargs):
+        if _trigger is None:
+            _trigger = lambda r: None
         with self.subTest(attr=attr, sig=(args, kwargs)):
             with self.assertRaises(Exception) as cm:
                 r = getattr(self.base, attr)(*args, **kwargs)
                 _trigger(r)
             err = str(cm.exception)
-            # with self.assertRaises(TypeError):
-            #     getattr(self.pool, attr)(*args, **kwargs)
+            with self.assertRaises(TypeError) as cm_pool:
+                r = getattr(self.pool, attr)(*args, **kwargs)
+                _trigger(r)
+            err2 = str(cm_pool.exception)
+            self.assertEqual(type(err), type(err2))
+            self.assertEqual(str(err), str(err2))
