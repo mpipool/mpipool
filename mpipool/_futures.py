@@ -8,7 +8,9 @@ import dill
 import warnings
 from mpi4py import MPI
 from .exceptions import *
+import tblib.pickling_support as tb_pickling
 
+tb_pickling.install()
 MPI.pickle.__init__(dill.dumps, dill.loads)
 
 class _JobThread(threading.Thread):
@@ -33,8 +35,11 @@ class _JobThread(threading.Thread):
         MPI.COMM_WORLD.send((self._task, (self._args, self._kwargs)), dest=self._worker)
         # Execute a blocking wait on this thread, waiting for the result of the worker on
         # another MPI process
-        result = MPI.COMM_WORLD.recv(source=self._worker)
-        self._future.set_result(result)
+        exit_code, result = MPI.COMM_WORLD.recv(source=self._worker)
+        if exit_code:
+            self._future.set_exception(result)
+        else:
+            self._future.set_result(result)
 
     def assign_worker(self, worker):
         self._worker = worker
@@ -58,14 +63,8 @@ class MPIExecutor(concurrent.futures.Executor):
 
         if not self.is_master():
             # The workers enter their workloop here.
-            try:
-                self._work()
-            except Exception:
-                traceback.print_exc()
-                sys.stdout.flush()
-                sys.stderr.flush()
-                MPI.COMM_WORLD.Abort()
-            # Workers who's been told to quit work resume code here and return out of the
+            self._work()
+            # Workers who've been told to quit work resume code here and return out of the
             # pool constructor
             return
 
@@ -80,12 +79,19 @@ class MPIExecutor(concurrent.futures.Executor):
 
     def _work(self):
         while True:
-            task = self._comm.recv(source=self._master)
-            if task is None:
-                break
-            func, (args, kwargs) = task
-            result = func(*args, **kwargs)
-            self._comm.ssend(result, self._master)
+            try:
+                task = self._comm.recv(source=self._master)
+                if task is None:
+                    break
+                func, (args, kwargs) = task
+                result = func(*args, **kwargs)
+                self._comm.ssend((0, result), self._master)
+            except Exception as e:
+                self._error(e)
+
+    def _error(self, exc, exit_code=1):
+        print("Sending err", exit_code, exc, flush=True)
+        self._comm.ssend((exit_code, exc), self._master)
 
     def submit(self, fn, /, *args, **kwargs):
         """
