@@ -126,10 +126,10 @@ class MPIExecutor(concurrent.futures.Executor):
 
     def map(self, fn, *iterables):
         """
-        Submits jobs for as long as all ``iterables`` provide values and returns the
-        results in a list. The iterables are consumed lazily.
+        Submits jobs for as long as all ``iterables`` provide values and returns an
+        iterator with the results. The iterables are consumed lazily.
         """
-        return self.submit_batch(fn, *iterables).result()
+        yield from (f.result() for f in self.submit_batch(fn, *iterables).ordered)
 
     def _schedule(self, job, handover=None):
         """

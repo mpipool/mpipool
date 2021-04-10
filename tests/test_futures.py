@@ -38,9 +38,11 @@ class TestInterface(unittest.TestCase):
 
     @master
     def test_map(self):
-        self.compare("map", fx, (5, 10, 15))
-        self.compare("map", len, ([5, 10], [15], [2, 3, 5]))
-        self.compare("map", zip, (1, 2, 3, 4), (1, 2, 3, 4))
+        def map_equality(test, o, n):
+            test.assertTrue(hasattr(n, "__next__"))
+            test.assertEqual(list(o), list(n))
+        self.compare("map", fx, (5, 10, 15), _assert=map_equality)
+        self.compare("map", len, ([5, 10], [15], [2, 3, 5]), _assert=map_equality)
 
     def compare(self, attr, *args, _assert=None, **kwargs):
         with self.subTest(attr=attr, sig=(args, kwargs)):
