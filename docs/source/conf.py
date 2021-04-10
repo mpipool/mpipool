@@ -22,7 +22,7 @@ project = "mpipool"
 copyright = "2021, Robin De Schepper"
 author = "Robin De Schepper"
 
-autodoc_mock_imports = ["mpi4py"]
+autodoc_mock_imports = ["mpi4py", "errr"]
 
 
 # -- General configuration ---------------------------------------------------
