@@ -1,3 +1,5 @@
 mpi4py==3.0.3
 dill==0.3.3
 errr==1.0.0
+tblib==1.7.0
+coverage==5.4.0
