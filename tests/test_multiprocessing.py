@@ -2,8 +2,14 @@ import unittest
 import mpipool
 import multiprocessing
 
+
 def fx(x):
     return x * 2
+
+
+def fxy(x, y):
+    return x * y
+
 
 def master(f):
     def master_only(self):
@@ -14,6 +20,7 @@ def master(f):
             pass
 
     return master_only
+
 
 class TestInterface(unittest.TestCase):
     def setUp(self):
@@ -30,22 +37,26 @@ class TestInterface(unittest.TestCase):
         self.compare_exc("apply", fx, (10, 2))
 
     @master
+    def test_apply_async(self):
+        self.compare_async("apply_async", fx, (5,))
+        self.compare_exc_async("apply_async", fx, (10, 2))
+
+    @master
     def test_map(self):
         self.compare("map", fx, (5, 10, 15))
         self.compare("map", len, ([5, 10], [15], [2, 3, 5]))
 
     @master
-    def test_apply_async(self):
-        def _assert(base, pool):
-            self.assertEqual(base.get(), pool.get())
-        self.compare("apply_async", fx, (5,), _assert=_assert)
-        self.compare_exc("apply_async", fx, (10, 2), _trigger=lambda r: r.get())
+    def test_map_async(self):
+        self.compare_async("map_async", fx, range(55))
 
     @master
-    def test_map_async(self):
-        def _assert(base, pool):
-            self.assertEqual(base.get(), pool.get())
-        self.compare("map_async", fx, range(55), _assert=_assert)
+    def test_starmap(self):
+        self.compare("starmap", fxy, [(i, i) for i in range(55)])
+
+    @master
+    def test_starmap_async(self):
+        self.compare_async("starmap_async", fxy, [(i, i) for i in range(55)])
 
     def compare(self, attr, *args, _assert=None, **kwargs):
         with self.subTest(attr=attr, sig=(args, kwargs)):
@@ -54,7 +65,7 @@ class TestInterface(unittest.TestCase):
             if _assert is None:
                 self.assertEqual(base_r, pool_r)
             else:
-                _assert(base_r, pool_r)
+                _assert(self, base_r, pool_r)
 
     def compare_exc(self, attr, *args, _trigger=None, **kwargs):
         if _trigger is None:
@@ -70,3 +81,17 @@ class TestInterface(unittest.TestCase):
             err2 = str(cm_pool.exception)
             self.assertEqual(type(err), type(err2))
             self.assertEqual(str(err), str(err2))
+
+    def compare_async(self, attr, *args, **kwargs):
+        return self.compare(attr, *args, _assert=_assert_async, **kwargs)
+
+    def compare_exc_async(self, attr, *args, **kwargs):
+        return self.compare_exc(attr, *args, _trigger=_trigger_async, **kwargs)
+
+
+def _assert_async(self, base, pool):
+    self.assertEqual(base.get(), pool.get())
+
+
+def _trigger_async(r):
+    return r.get()

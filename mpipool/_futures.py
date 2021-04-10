@@ -13,10 +13,12 @@ import tblib.pickling_support as tb_pickling
 tb_pickling.install()
 MPI.pickle.__init__(dill.dumps, dill.loads)
 
+
 class _JobThread(threading.Thread):
     """
     Job threads run on the master process and wait for the result from the worker.
     """
+
     def __init__(self, future, task, args, kwargs):
         super().__init__()
         self._future = future
@@ -50,6 +52,7 @@ class MPIExecutor(concurrent.futures.Executor):
     MPI based Executor. Will use all available MPI processes to execute submissions to the
     pool. The MPI process with rank 0 will continue while all other ranks halt and
     """
+
     def __init__(self, master=0, comm=None, rejoin=True):
         if comm is None:
             comm = MPI.COMM_WORLD
@@ -66,7 +69,9 @@ class MPIExecutor(concurrent.futures.Executor):
             # The workers enter their workloop here.
             self._work()
             # Workers who've been told to quit work resume code here and return out of the
-            # pool constructor
+            # pool constructor, unless `rejoin=False`
+            if not rejoin:
+                exit()
             return
 
         # The master continues initialization here
@@ -91,7 +96,6 @@ class MPIExecutor(concurrent.futures.Executor):
                 self._error(e)
 
     def _error(self, exc, exit_code=1):
-        print("Sending err", exit_code, exc, flush=True)
         self._comm.ssend((exit_code, exc), self._master)
 
     def submit(self, fn, /, *args, **kwargs):
@@ -111,15 +115,21 @@ class MPIExecutor(concurrent.futures.Executor):
         self._schedule(job)
         return f
 
+    def submit_batch(self, fn, *iterables):
+        """
+        Submits jobs lazily for as long as all ``iterables`` provide values.
+
+        :return: A batch object
+        :rtype: :class:`.Batch`
+        """
+        return Batch(self, fn, iterables)
+
     def map(self, fn, *iterables):
         """
-        Submits jobs for as long as all ``iterables`` provide values and places the
-        results in a list. The iterables are consumed greedily.
+        Submits jobs for as long as all ``iterables`` provide values and returns the
+        results in a list. The iterables are consumed lazily.
         """
-        # Submit all sets of parameters in the given iterables to the pool and collect
-        # the results in a list.
-        fs = [self.submit(fn, *args) for args in zip(*iterables)]
-        return [f.result() for f in fs]
+        return self.submit_batch(fn, *iterables).result()
 
     def _schedule(self, job, handover=None):
         """
@@ -216,19 +226,26 @@ class ExitObject:
     attribute access on this object will raise a ``WorkerExitSuiteSignal`` so
     that the context is exited.
     """
+
     def is_master(self):
-        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
+        warnings.warn(
+            "Workers seem to have rejoined the main code, please properly fence off the master code."
+        )
         return False
 
     def is_worker(self):
-        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
+        warnings.warn(
+            "Workers seem to have rejoined the main code, please properly fence off the master code."
+        )
         return True
 
     def workers_exit(self):
         raise WorkerExitSuiteSignal()
 
     def __getattr__(self, attr):
-        raise PoolGuardError("Please use the `workers_exit` function at the start of the pool context.")
+        raise PoolGuardError(
+            "Please use the `workers_exit` function at the start of the pool context."
+        )
 
 
 class WorkerExitSuiteSignal(Exception):
@@ -236,11 +253,131 @@ class WorkerExitSuiteSignal(Exception):
     This signal is raised when a worker needs to exit before executing the suite
     of a ``with`` statement that only the master should execute.
     """
+
     pass
+
 
 class PoolGuardError(Exception):
     """
     This error is raised if a user forgets to guard their pool context with a
     :method:`~.pool.MPIExecutor.workers_exit` call.
     """
+
     pass
+
+
+class Batch:
+    """
+    A asynchronous interface to a collection of lazily submitted jobs. Can be used to
+    check whether all jobs have been submitted already and whether all jobs have finished
+    already. The batch can also be waited on, or a blocking call can be made to collect
+    the result of the batch as a list.
+    """
+
+    def __init__(self, pool, fn, iterables):
+        self._pool = pool
+        self._fn = fn
+        self._itr = enumerate(zip(*iterables))
+        self._futures = []
+        self._ordered = []
+        self._order_queue = []
+        self._submitted = False
+        self._submit_count = 0
+        self._finished = False
+        self._finished_count = 0
+        for _ in range(pool._size):
+            self._submit_next()
+
+    @property
+    def submitted(self):
+        return self._submitted
+
+    @property
+    def finished(self):
+        return self._finished
+
+    def _submit_next(self):
+        try:
+            id, args = next(self._itr)
+            self._submit_count += 1
+        except StopIteration:
+            self._submitted = True
+            if not len(self._futures):
+                self._finished = True
+        else:
+            f = self._pool.submit(self._fn, *args)
+            f.id = id
+            f.args = args
+            self._futures.append(f)
+            f.add_done_callback(self._future_done)
+
+    def _future_done(self, completed_f):
+        self._add_ordered(completed_f)
+        self._submit_next()
+        self._finished_count += 1
+        self._finished = self._submitted and self._finished_count == self._submit_count
+
+    def _add_ordered(self, f):
+        if len(self._ordered) == f.id:
+            # Is this future the next to be added to the ordered result?
+            self._ordered.append(f)
+            # Go over the queued results in id order to add the next results that might be
+            # in the queue already.
+            for qf in sorted(self._order_queue, key=lambda f: f.id):
+                if len(self._ordered) == qf.id:
+                    self._ordered.append(qf)
+                    self._order_queue.remove(qf)
+        else:
+            self._order_queue.append(f)
+
+    def wait(self, *args, **kwargs):
+        if not self.submitted and kwargs.get("return_when", "") != "FIRST_COMPLETED":
+            warnings.warn(
+                "Returning when ALL_COMPLETED or FIRST_EXCEPTION on a not completely"
+                + " submitted batch is unsupported and can lead to unexpected results."
+            )
+        return self._wait(*args, **kwargs)
+
+    def _wait(self, *args, **kwargs):
+        return concurrent.futures.wait(self._futures.copy(), *args, **kwargs)
+
+    def result(self):
+        while not self.finished:
+            self._wait()
+        return [f.result() for f in self._ordered]
+
+    def __iter__(self):
+        """
+        Returns the futures of this batch as soon as they become available as the
+        lazy consumption of the input iterables progresses.
+
+        :return: futures iterator
+        :rtype: generator
+        """
+        done = set()
+        while not self.finished or len(done) < len(self._futures):
+            fs = self._wait(return_when="FIRST_COMPLETED")
+            newly_done = set(fs.done) - done
+            done.update(fs.done)
+            yield from newly_done
+
+    @property
+    def futures(self):
+        """
+        Returns the futures of this batch as soon as they become available as the
+        lazy consumption of the input iterables progresses.
+
+        :return: futures iterator
+        :rtype: generator
+        """
+        return iter(self)
+
+    @property
+    def ordered(self):
+        id = 0
+        while not self.finished or id < len(self._ordered):
+            if id < len(self._ordered):
+                yield self._ordered[id]
+                id += 1
+            else:
+                self._wait(return_when="FIRST_COMPLETED")

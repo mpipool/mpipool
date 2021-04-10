@@ -1,6 +1,7 @@
 import unittest, time
 import mpipool
 
+
 class TestErrorHandling(unittest.TestCase):
     def test_single_error(self):
         def razer():
