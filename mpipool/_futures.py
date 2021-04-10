@@ -307,7 +307,6 @@ class Batch:
         else:
             f = self._pool.submit(self._fn, *args)
             f.id = id
-            f.args = args
             self._futures.append(f)
             f.add_done_callback(self._future_done)
 
