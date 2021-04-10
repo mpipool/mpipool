@@ -32,8 +32,5 @@ jobs:
         pip install -e .
     - name: Run tests & coverage
       run: |
-        # Serial tests
-        coverage run -p -m unittest discover -v -s ./tests
-        # Parallel tests
         mpiexec --oversubscribe -n 4 coverage run -p -m unittest discover -v -s ./tests
         bash <(curl -s https://codecov.io/bash)
