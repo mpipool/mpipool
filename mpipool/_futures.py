@@ -50,7 +50,7 @@ class MPIExecutor(concurrent.futures.Executor):
     MPI based Executor. Will use all available MPI processes to execute submissions to the
     pool. The MPI process with rank 0 will continue while all other ranks halt and
     """
-    def __init__(self, master=0, comm=None):
+    def __init__(self, master=0, comm=None, rejoin=True):
         if comm is None:
             comm = MPI.COMM_WORLD
         self._comm = comm
@@ -58,6 +58,7 @@ class MPIExecutor(concurrent.futures.Executor):
         self._rank = self._comm.Get_rank()
         self._queue = queue.SimpleQueue()
         self._open = True
+        self._rejoin = rejoin
 
         atexit.register(lambda: MPIExecutor.shutdown(self))
 
