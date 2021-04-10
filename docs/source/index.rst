@@ -17,8 +17,9 @@ Welcome to mpipool's documentation!
    mpipool
 
 Both the package and the docs are pretty minimalistic: You create an
-:class:`.pool.MPIExecutor` and either :meth:`~.pool.MPIExecutor.submit` jobs to it
-or :meth:`~.pool.MPIExecutor.map` a series of jobs to a list.
+:class:`.MPIExecutor` and either :meth:`~.MPIExecutor.submit` jobs to it
+or :meth:`~.MPIExecutor.map` a series of jobs to a list. There's also the
+:class:`~.MPIPool` which follows the :class:`~multiprocessing.pool.Pool` interface.
 
 Indices and tables
 ==================

@@ -34,14 +34,14 @@ with MPIExecutor() as pool:
   # and to wait for all results is the `.map` method:
   results = pool.map(menial_task, range(100))
 
-print("All processes join again here.")
+print("All MPI processes join again here.")
 ```
 
 You'll see that some results will have exponentiated either by 1, 2, ..., n
 depending on which worker they were sent to. It's also important to prevent your
 workers from running the master code using the `pool.workers_exit()` call. As a
-fail safe any attribute access on the `pool` object made from workers will
-result in them exiting anyway.
+fail safe any attribute access on the `pool` object handed to workers will
+result in an error.
 
 **Note:** Use MPI helpers such as `mpirun`, `mpiexec` or SLURM's `srun`:
 
@@ -75,5 +75,5 @@ with MPIPool() as pool:
   result = pool.map_async(menial_task, range(100))
   print("Done already?", result.ready())
 
-print("All processes join again here.")
+print("All MPI processes join again here.")
 ```
