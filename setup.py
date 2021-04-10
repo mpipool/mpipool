@@ -33,7 +33,7 @@ setup(
     python_requires=">=3.8,<4",
     keywords="mpi pool mpipool mpipool",
     classifiers=[
-        "Development Status :: 5 - Stable",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Science/Research",
         "Intended Audience :: Developers",
         "Topic :: Scientific/Engineering",
