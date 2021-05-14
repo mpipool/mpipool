@@ -37,7 +37,7 @@ To prevent this using pool objects will usually follow these idioms:
 from mpipool import MPIExecutor
 from mpi4py.MPI import COMM_WORLD
 
-pool = MPIPool()
+pool = MPIExecutor()
 if pool.is_master():
   try:
     pool.map(len, ([],[]))
@@ -57,7 +57,7 @@ the `with` block:
 from mpipool import MPIExecutor
 from mpi4py.MPI import COMM_WORLD
 
-with MPIPool() as pool:
+with MPIExecutor() as pool:
   pool.workers_exit()
   pool.map(len, ([], []))
 
