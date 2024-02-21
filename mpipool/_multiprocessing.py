@@ -1,6 +1,7 @@
-from .exceptions import *
-from ._futures import MPIExecutor
 import multiprocessing.pool
+
+from ._futures import MPIExecutor
+from .exceptions import *
 
 
 class MPIPool(multiprocessing.pool.Pool):
@@ -8,9 +9,13 @@ class MPIPool(multiprocessing.pool.Pool):
         try:
             self._executor = MPIExecutor()
         except MPIProcessError as e:
-            raise MPIProcessError(
-                "MPIPool requires at least 2 MPI processes."
-            ) from None
+            raise MPIProcessError("MPIPool requires at least 2 MPI processes.") from None
+
+    def is_main(self):
+        return self._executor.is_main()
+
+    def is_worker(self):
+        return self._executor.is_worker()
 
     def apply_async(self, fn, args=None, kwargs=None):
         if args is None:
@@ -36,9 +41,7 @@ class MPIPool(multiprocessing.pool.Pool):
         return MapAsyncResult(fs)
 
     def imap(self, fn, iterable):
-        yield from (
-            f.result() for f in self._executor.submit_batch(fn, iterable).ordered
-        )
+        yield from (f.result() for f in self._executor.submit_batch(fn, iterable).ordered)
 
     def imap_unordered(self, fn, iterable):
         yield from (f.result() for f in self._executor.submit_batch(fn, iterable))
@@ -55,7 +58,7 @@ class MPIPool(multiprocessing.pool.Pool):
             self.close()
 
     def __enter__(self):
-        if self._executor.is_master():
+        if self._executor.is_main():
             return self
         else:
             return self._executor.__enter__()

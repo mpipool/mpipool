@@ -38,7 +38,7 @@ from mpipool import MPIExecutor
 from mpi4py.MPI import COMM_WORLD
 
 pool = MPIExecutor()
-if pool.is_master():
+if pool.is_main():
   try:
     pool.map(len, ([],[]))
   finally:

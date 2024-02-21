@@ -1,14 +1,14 @@
-import threading
-import concurrent.futures
 import atexit
-import sys
-import traceback
+import concurrent.futures
 import queue
-import dill
+import threading
 import warnings
-from mpi4py import MPI
-from .exceptions import *
+
+import dill
 import tblib.pickling_support as tb_pickling
+from mpi4py import MPI
+
+from .exceptions import MPIProcessError
 
 tb_pickling.install()
 MPI.pickle.__init__(dill.dumps, dill.loads)
@@ -65,7 +65,7 @@ class MPIExecutor(concurrent.futures.Executor):
 
         atexit.register(lambda: MPIExecutor.shutdown(self))
 
-        if not self.is_master():
+        if not self.is_main():
             # The workers enter their workloop here.
             self._work()
             # Workers who've been told to quit work resume code here and return out of the
@@ -187,11 +187,11 @@ class MPIExecutor(concurrent.futures.Executor):
             for worker in self._workers:
                 self._comm.send(None, worker, 0)
 
-    def is_master(self):
+    def is_main(self):
         return self._rank == self._master
 
     def is_worker(self):
-        return not self.is_master()
+        return not self.is_main()
 
     @property
     def size(self):
@@ -202,7 +202,7 @@ class MPIExecutor(concurrent.futures.Executor):
         return len(self._idle_workers)
 
     def __enter__(self):
-        if self.is_master():
+        if self.is_main():
             return self
         else:
             return ExitObject()
@@ -210,12 +210,13 @@ class MPIExecutor(concurrent.futures.Executor):
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_type is WorkerExitSuiteSignal and self.is_worker():
             return True
+        self.shutdown()
 
     def workers_exit(self):
         # The master shouldn't do anything when workers are asked to exit,
         # but workers should have been given an "exit" object by the context
         # manager, so raise an error if this function is called on by a worker.
-        if self.is_master():
+        if self.is_main():
             return
         raise WorkerExitSuiteSignal()
 
@@ -227,25 +228,19 @@ class ExitObject:
     that the context is exited.
     """
 
-    def is_master(self):
-        warnings.warn(
-            "Workers seem to have rejoined the main code, please properly fence off the master code."
-        )
+    def is_main(self):
+        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
         return False
 
     def is_worker(self):
-        warnings.warn(
-            "Workers seem to have rejoined the main code, please properly fence off the master code."
-        )
+        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
         return True
 
     def workers_exit(self):
         raise WorkerExitSuiteSignal()
 
     def __getattr__(self, attr):
-        raise PoolGuardError(
-            "Please use the `workers_exit` function at the start of the pool context."
-        )
+        raise PoolGuardError("Please use the `workers_exit` function at the start of the pool context.")
 
 
 class WorkerExitSuiteSignal(Exception):

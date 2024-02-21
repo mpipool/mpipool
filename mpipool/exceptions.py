@@ -1,3 +1,6 @@
-from errr.tree import make_tree as _t, exception as _e
+class MPIPoolError(Exception):
+    pass
 
-_t(globals(), MPIPoolError=_e(MPIProcessError=_e()))
+
+class MPIProcessError(Exception):
+    pass

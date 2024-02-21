@@ -1,6 +1,7 @@
-import unittest
-import mpipool
 import concurrent.futures
+import unittest
+
+import mpipool
 
 
 def fx(x):
@@ -37,6 +38,14 @@ class TestInterface(unittest.TestCase):
         self.compare_exc("submit", fx, 10, 2)
 
     @master
+    def test_local_fn_submit(self):
+        def fx(x):
+            return x * 2
+
+        self.compare("submit", fx, 5)
+        self.compare_exc("submit", fx, 10, 2)
+
+    @master
     def test_map(self):
         def map_equality(test, o, n):
             test.assertTrue(hasattr(n, "__next__"))
@@ -68,3 +77,24 @@ class TestInterface(unittest.TestCase):
             err2 = str(cm_pool.exception)
             self.assertEqual(type(err), type(err2))
             self.assertEqual(str(err), str(err2))
+
+
+class TestNonlocal(unittest.TestCase):
+    def setUp(self):
+        self.base = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        self.pool = mpipool.MPIExecutor()
+
+    def tearDown(self):
+        self.base.shutdown()
+        self.pool.shutdown()
+
+    @master
+    def test_nonlocal_fn_submit(self):
+        i = 4
+
+        def fx(x):
+            nonlocal i
+            return i + x * 2
+
+        f = self.pool.submit(fx, 3)
+        self.assertEqual(10, f.result())
