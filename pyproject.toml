@@ -1,0 +1,21 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "mpipool"
+authors = [{name = "Robin De Schepper", email = "robingilbert.deschepper@unipv.it"}]
+license.file = "LICENSE"
+readme = "README.md"
+dynamic = ["version", "description"]
+dependencies = ["mpi4py>=3.0.3", "dill>=0.3.3", "errr>=1.0.0", "tblib>=1.7.0"]
+requires-python = ">=3.8"
+
+[project.optional-dependencies]
+test = ["coverage~=7.0"]
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+line-length = 120
