@@ -1,49 +1,111 @@
 import atexit
 import concurrent.futures
+import logging
 import queue
+import sys
 import threading
+import time
+import typing
 import warnings
 
 import dill
+import mpi4py.MPI
 import tblib.pickling_support as tb_pickling
 from mpi4py import MPI
 
 from .exceptions import MPIProcessError
 
+# Module level logger
+_logger = logging.Logger(f"{__name__}:WORLD:{MPI.COMM_WORLD.Get_rank()}")
+# Enable traceback pickling patch
 tb_pickling.install()
-MPI.pickle.__init__(dill.dumps, dill.loads)
+# Set mpi4py to use `dill` as (de)serialization layer.
+
+
+def _dill_dumps(obj, *args, **kwargs):
+    if _logger.isEnabledFor(logging.DEBUG):
+        size = sys.getsizeof(obj)
+        _logger.debug(f"Serializing {type(obj)} of {size} bytes (arguments: {args}, keyword arguments: {kwargs})")
+    ser = dill.dumps(obj, *args, **kwargs)
+    if _logger.isEnabledFor(logging.DEBUG):
+        _logger.debug(f"Serialized to {len(ser)} bytes.")
+    return ser
+
+
+def _dill_loads(ser, *args, **kwargs):
+    if _logger.isEnabledFor(logging.DEBUG):
+        _logger.debug(f"Deserializing {len(ser)} bytes (arguments: {args}, keyword arguments: {kwargs})")
+    obj = dill.loads(ser, *args, **kwargs)
+    if _logger.isEnabledFor(logging.DEBUG):
+        size = sys.getsizeof(obj)
+        _logger.debug(f"Deserialized to {type(obj)} of {size} bytes.")
+    return obj
+
+
+MPI.pickle.__init__(_dill_dumps, _dill_loads)
+
+
+def enable_serde_logging():
+    stream = logging.StreamHandler(stream=sys.stdout)
+    formatter = logging.Formatter("[%(asctime)s - %(levelname)s - %(name)s] %(message)s")
+    stream.setFormatter(formatter)
+    _logger.addHandler(stream)
+    _logger.setLevel(logging.DEBUG)
+
+
+# (func, (args, kwargs))
+Task = typing.Tuple[typing.Callable, typing.Tuple[list, dict]]
 
 
 class _JobThread(threading.Thread):
     """
-    Job threads run on the master process and wait for the result from the worker.
+    Job threads run on the main
+     process and wait for the result from the worker.
     """
 
-    def __init__(self, future, task, args, kwargs):
-        super().__init__()
+    def __init__(self, future: concurrent.futures.Future, task: typing.Callable, args, kwargs, logger: logging.Logger):
+        # `daemon=True` prevents process from stalling (Python will more agressively kill this thread, which is good).
+        super().__init__(daemon=True)
         self._future = future
         self._task = task
         self._args = args
         self._kwargs = kwargs
-        self._worker = None
+        self._worker: typing.Optional[int] = None
+        self._logger = logger
 
     def run(self):
+        """
+        Send the job to the assigned worker and wait for the result on this thread.
+        """
+        if self._worker is None:
+            raise RuntimeError("Attempt to run job without an assigned worker.")
         if not self._future.set_running_or_notify_cancel():
-            # If the future has been cancelled before we're placed on the queue we don't
-            # do anything on this thread.
+            # The future has been cancelled, we don't need to do anything.
             return
 
-        # If the future is still active we send the task to our assigned worker.
+        self._logger.info(f"Sending MPI data to worker {self._worker}")
+        # Send the task to the assigned worker.
         MPI.COMM_WORLD.send((self._task, (self._args, self._kwargs)), dest=self._worker)
-        # Execute a blocking wait on this thread, waiting for the result of the worker on
-        # another MPI process
-        exit_code, result = MPI.COMM_WORLD.recv(source=self._worker)
+        # Execute a non-blocking wait on this thread, waiting for the result of the worker on
+        # another MPI process. Note: Blocking waits like `recv` prevent the threads from being
+        # cleaned up and can stall the Python process indefinitively.
+        request = MPI.COMM_WORLD.irecv(source=self._worker)
+        while True:
+            done, buffer = request.test()
+            if done:
+                break
+            else:
+                time.sleep(0.0001)
+
+        exit_code, result = buffer
         if exit_code:
+            self._logger.info(f"Received MPI exception from worker {self._worker}")
             self._future.set_exception(result)
         else:
+            self._logger.info(f"Received MPI result from worker {self._worker}")
             self._future.set_result(result)
 
-    def assign_worker(self, worker):
+    def assign_worker(self, worker: int):
         self._worker = worker
 
 
@@ -53,15 +115,22 @@ class MPIExecutor(concurrent.futures.Executor):
     pool. The MPI process with rank 0 will continue while all other ranks halt and
     """
 
-    def __init__(self, master=0, comm=None, rejoin=True):
+    def __init__(self, main=0, comm: mpi4py.MPI.Comm = None, rejoin=True, loglevel=None):
         if comm is None:
             comm = MPI.COMM_WORLD
         self._comm = comm
-        self._master = master
+        self._main = main
         self._rank = self._comm.Get_rank()
         self._queue = queue.SimpleQueue()
         self._open = True
         self._rejoin = rejoin
+        self._logger = logging.Logger(f"mpipool:{'main' if self.is_main() else 'worker'}:{self._rank}")
+        if loglevel is not None:
+            stream = logging.StreamHandler()
+            formatter = logging.Formatter("[%(asctime)s - %(levelname)s - %(name)s] %(message)s")
+            stream.setFormatter(formatter)
+            self._logger.addHandler(stream)
+            self._logger.setLevel(loglevel)
 
         atexit.register(lambda: MPIExecutor.shutdown(self))
 
@@ -70,13 +139,16 @@ class MPIExecutor(concurrent.futures.Executor):
             self._work()
             # Workers who've been told to quit work resume code here and return out of the
             # pool constructor, unless `rejoin=False`
+            self.shutdown()
             if not rejoin:
+                self._logger.info("Worker exiting (rejoin=False).")
                 exit()
+            self._logger.info("Worker rejoining normal code execution.")
             return
 
         # The master continues initialization here
         self._workers = set(range(self._comm.size))
-        self._workers.discard(self._master)
+        self._workers.discard(self._main)
         self._idle_workers = self._workers.copy()
         self._size = self._comm.Get_size() - 1
 
@@ -84,19 +156,35 @@ class MPIExecutor(concurrent.futures.Executor):
             raise MPIProcessError("MPIExecutor requires at least 2 MPI processes.")
 
     def _work(self):
+        self._logger.info("Starting work loop")
         while True:
             try:
-                task = self._comm.recv(source=self._master)
+                task: Task = self._comm.recv(source=self._main)
                 if task is None:
+                    self._logger.info("Terminating work loop.")
                     break
                 func, (args, kwargs) = task
-                result = func(*args, **kwargs)
-                self._comm.ssend((0, result), self._master)
+                self._logger.info(f"Executing task: {func}")
+                if self._logger.isEnabledFor(logging.DEBUG):
+                    # Shield these logs by an effective check, because processing them into strings/streams is slow.
+                    self._logger.debug(f"Task arguments: {args}")
+                    self._logger.debug(f"Task keyword arguments: {kwargs}")
+                try:
+                    result = func(*args, **kwargs)
+                except Exception as e:
+                    self._logger.error(f"Task execution error.", exc_info=sys.exc_info())
+                    self._error(e)
+                else:
+                    self._logger.info(f"Task executed.")
+                    if self._logger.isEnabledFor(logging.DEBUG):
+                        self._logger.debug(f"Task result: {result}")
+                    self._comm.ssend((0, result), self._main)
             except Exception as e:
+                self._logger.critical(f"Work loop error.", exc_info=sys.exc_info())
                 self._error(e)
 
     def _error(self, exc, exit_code=1):
-        self._comm.ssend((exit_code, exc), self._master)
+        self._comm.ssend((exit_code, exc), self._main)
 
     def submit(self, fn, /, *args, **kwargs):
         """
@@ -110,7 +198,7 @@ class MPIExecutor(concurrent.futures.Executor):
         # Create a future to hand to a new job thread and to return from the function
         # to the user
         f = concurrent.futures.Future()
-        job = _JobThread(f, fn, args, kwargs)
+        job = _JobThread(f, fn, args, kwargs, self._logger)
         # Schedule the job to be executed on a worker
         self._schedule(job)
         return f
@@ -136,15 +224,19 @@ class MPIExecutor(concurrent.futures.Executor):
         Run a job on an open worker, or on the handover worker. Handover happens when a
         job finishes and another job is available on the queue.
         """
+        # Reserve or hand over a worker to the current job
         if handover is None:
             worker = self._reserve_worker()
         else:
             worker = handover
 
+        # If we managed to reserve a worker, assign and execute the job, otherwise queue it for later.
         if worker is not None:
+            self._logger.info(f"Executing {job} on worker {worker}.")
             job.assign_worker(worker)
             self._execute(job)
         else:
+            self._logger.info(f"No workers available, queueing {job}.")
             self._queue.put(job, block=False)
 
     def _reserve_worker(self):
@@ -157,15 +249,16 @@ class MPIExecutor(concurrent.futures.Executor):
             return None
 
     def _execute(self, j):
-        # A callback is added so that when this job completes the next job should starts
+        # A callback is added so that when this job completes the next job starts
         j._future.add_done_callback(self._job_finished(j))
         j.start()
 
     def _job_finished(self, job):
         # Create a callback with closure access to the job. The cb schedules the next job
-        # from the queue on its worker, or if there's no jobs left in the queue it returns
+        # from the queue on its worker. If there's no jobs left in the queue it returns
         # its worker to the idle worker pool.
         def _job_finished_cb(f):
+            self._logger.info(f"Job {job} finished.")
             try:
                 # Schedule the next job
                 self._schedule(self._queue.get(block=False), handover=job._worker)
@@ -175,11 +268,15 @@ class MPIExecutor(concurrent.futures.Executor):
 
         return _job_finished_cb
 
-    def shutdown(self):
+    def shutdown(self, wait=None, *, cancel_futures=None):
         """
         Close the pool and tell all workers to stop their work loop
         """
+        if wait is not None or cancel_futures is not None:
+            raise NotImplementedError("The `wait` and `cancel_futures` arguments have not been implemented yet.")
+
         if self.is_worker():
+            self._open = False
             return
 
         if self._open:
@@ -188,10 +285,14 @@ class MPIExecutor(concurrent.futures.Executor):
                 self._comm.send(None, worker, 0)
 
     def is_main(self):
-        return self._rank == self._master
+        return self._rank == self._main
 
     def is_worker(self):
         return not self.is_main()
+
+    @property
+    def open(self):
+        return self._open
 
     @property
     def size(self):
@@ -223,17 +324,15 @@ class MPIExecutor(concurrent.futures.Executor):
 
 class ExitObject:
     """
-    Object returned from the context manager to all non-master processes. Any
-    attribute access on this object will raise a ``WorkerExitSuiteSignal`` so
-    that the context is exited.
+    Object returned from the context manager to all worker processes.
     """
 
     def is_main(self):
-        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
+        warnings.warn("Pool object access from worker process. Please fence off the pool code.")
         return False
 
     def is_worker(self):
-        warnings.warn("Workers seem to have rejoined the main code, please properly fence off the master code.")
+        warnings.warn("Pool object access from worker process. Please fence off the pool code.")
         return True
 
     def workers_exit(self):
@@ -249,16 +348,12 @@ class WorkerExitSuiteSignal(Exception):
     of a ``with`` statement that only the master should execute.
     """
 
-    pass
-
 
 class PoolGuardError(Exception):
     """
     This error is raised if a user forgets to guard their pool context with a
     :method:`~.pool.MPIExecutor.workers_exit` call.
     """
-
-    pass
 
 
 class Batch:
