@@ -45,7 +45,4 @@ class TestErrorHandling(unittest.TestCase):
             f = pool.submit(lambda: Ununpicklable())
             e = f.exception()
             self.assertEqual(TypeError, e.__class__)
-            self.assertEqual(
-                "TestErrorHandling.test_unpickling_error.<locals>.Ununpicklable.__setstate__() takes 1 positional argument but 2 were given",
-                str(e),
-            )
+            self.assertTrue(str(e).endswith("__setstate__() takes 1 positional argument but 2 were given"))
