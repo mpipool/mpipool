@@ -91,7 +91,12 @@ class _JobThread(threading.Thread):
         # cleaned up and can stall the Python process indefinitively.
         request = MPI.COMM_WORLD.irecv(source=self._worker)
         while True:
-            done, buffer = request.test()
+            try:
+                done, buffer = request.test()
+            except Exception as e:
+                self._logger.error(f"Unable to read results from worker {self._worker}", exc_info=sys.exc_info())
+                done = True
+                buffer = (13, e)
             if done:
                 break
             else:
@@ -115,7 +120,7 @@ class MPIExecutor(concurrent.futures.Executor):
     pool. The MPI process with rank 0 will continue while all other ranks halt and
     """
 
-    def __init__(self, main=0, comm: mpi4py.MPI.Comm = None, rejoin=True, loglevel=None):
+    def __init__(self, main=0, comm: mpi4py.MPI.Comm = None, rejoin=True, logger=None, loglevel=None):
         if comm is None:
             comm = MPI.COMM_WORLD
         self._comm = comm
@@ -124,13 +129,18 @@ class MPIExecutor(concurrent.futures.Executor):
         self._queue = queue.SimpleQueue()
         self._open = True
         self._rejoin = rejoin
-        self._logger = logging.Logger(f"mpipool:{'main' if self.is_main() else 'worker'}:{self._rank}")
-        if loglevel is not None:
-            stream = logging.StreamHandler()
-            formatter = logging.Formatter("[%(asctime)s - %(levelname)s - %(name)s] %(message)s")
-            stream.setFormatter(formatter)
-            self._logger.addHandler(stream)
-            self._logger.setLevel(loglevel)
+        if logger is not None:
+            self._logger = logger
+        else:
+            self._logger = logging.Logger(f"mpipool:{'main' if self.is_main() else 'worker'}:{self._rank}")
+            if loglevel is not None:
+                stream = logging.StreamHandler()
+                formatter = logging.Formatter("[%(asctime)s - %(levelname)s - %(name)s] %(message)s")
+                stream.setFormatter(formatter)
+                self._logger.addHandler(stream)
+                self._logger.setLevel(loglevel)
+            else:
+                self._logger.setLevel(logging.CRITICAL)
 
         atexit.register(lambda: MPIExecutor.shutdown(self))
 
