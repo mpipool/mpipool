@@ -26,13 +26,6 @@ class TestErrorHandling(unittest.TestCase):
         """
         records = []
 
-        class Ununpicklable:
-            def __init__(self):
-                self.x = 5
-
-            def __setstate__(self):
-                pass
-
         class TestHandler(logging.Handler):
             def emit(self, record):
                 records.append(record)
@@ -46,3 +39,11 @@ class TestErrorHandling(unittest.TestCase):
             e = f.exception()
             self.assertEqual(TypeError, e.__class__)
             self.assertTrue(str(e).endswith("__setstate__() takes 1 positional argument but 2 were given"))
+
+
+class Ununpicklable:
+    def __init__(self):
+        self.x = 5
+
+    def __setstate__(self):
+        pass

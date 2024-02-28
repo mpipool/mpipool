@@ -1,7 +1,7 @@
 import atexit
+import collections
 import concurrent.futures
 import logging
-import queue
 import sys
 import threading
 import time
@@ -78,12 +78,13 @@ class _JobThread(threading.Thread):
         Send the job to the assigned worker and wait for the result on this thread.
         """
         if self._worker is None:
-            raise RuntimeError("Attempt to run job without an assigned worker.")
+            raise RuntimeError(f"Attempt to run job without an assigned worker.")
         if not self._future.set_running_or_notify_cancel():
             # The future has been cancelled, we don't need to do anything.
+            self._logger.debug(f"Bailing out of cancelled job {self}")
             return
 
-        self._logger.info(f"Sending MPI data to worker {self._worker}")
+        self._logger.info(f"Sending {self} MPI data to worker {self._worker}")
         # Send the task to the assigned worker.
         MPI.COMM_WORLD.send((self._task, (self._args, self._kwargs)), dest=self._worker)
         # Execute a non-blocking wait on this thread, waiting for the result of the worker on
@@ -94,7 +95,7 @@ class _JobThread(threading.Thread):
             try:
                 done, buffer = request.test()
             except Exception as e:
-                self._logger.error(f"Unable to read results from worker {self._worker}", exc_info=sys.exc_info())
+                self._logger.error(f"Unable to read {self} results from worker {self._worker}", exc_info=sys.exc_info())
                 done = True
                 buffer = (13, e)
             if done:
@@ -113,6 +114,9 @@ class _JobThread(threading.Thread):
     def assign_worker(self, worker: int):
         self._worker = worker
 
+    def cancel(self):
+        self._future.cancel()
+
 
 class MPIExecutor(concurrent.futures.Executor):
     """
@@ -126,7 +130,7 @@ class MPIExecutor(concurrent.futures.Executor):
         self._comm = comm
         self._main = main
         self._rank = self._comm.Get_rank()
-        self._queue = queue.SimpleQueue()
+        self._queue = collections.deque()
         self._open = True
         self._rejoin = rejoin
         if logger is not None:
@@ -247,7 +251,7 @@ class MPIExecutor(concurrent.futures.Executor):
             self._execute(job)
         else:
             self._logger.info(f"No workers available, queueing {job}.")
-            self._queue.put(job, block=False)
+            self._queue.append(job)
 
     def _reserve_worker(self):
         # Pop a worker from the idle worker set
@@ -270,20 +274,20 @@ class MPIExecutor(concurrent.futures.Executor):
         def _job_finished_cb(f):
             self._logger.info(f"Job {job} finished.")
             try:
-                # Schedule the next job
-                self._schedule(self._queue.get(block=False), handover=job._worker)
-            except queue.Empty:
+                next_job = self._queue.popleft()
+            except IndexError:
                 # No jobs waiting? Let the worker idle
                 self._idle_workers.add(job._worker)
+            else:
+                # Schedule the next job
+                self._schedule(next_job, handover=job._worker)
 
         return _job_finished_cb
 
-    def shutdown(self, wait=None, *, cancel_futures=None):
+    def shutdown(self, wait=True, *, cancel_futures=False):
         """
         Close the pool and tell all workers to stop their work loop
         """
-        if wait is not None or cancel_futures is not None:
-            raise NotImplementedError("The `wait` and `cancel_futures` arguments have not been implemented yet.")
 
         if self.is_worker():
             self._open = False
@@ -291,8 +295,21 @@ class MPIExecutor(concurrent.futures.Executor):
 
         if self._open:
             self._open = False
+            self._logger.info("Shutting down.")
+            open_jobs = list(self._queue)
+            if cancel_futures:
+                self._logger.info(f"Cancelling {len(open_jobs)} jobs.")
+                for job in open_jobs:
+                    job.cancel()
+            if wait:
+                not_done = [job._future for job in open_jobs]
+                while not_done:
+                    self._logger.info(f"Waiting for shutdown of {len(open_jobs)} job threads.")
+                    done, not_done = concurrent.futures.wait(not_done, return_when=concurrent.futures.ALL_COMPLETED)
+            self._logger.info("Sending shutdown signal to workers.")
             for worker in self._workers:
                 self._comm.send(None, worker, 0)
+            self._logger.info("Shutdown complete.")
 
     def is_main(self):
         return self._rank == self._main

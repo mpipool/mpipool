@@ -1,5 +1,7 @@
 import concurrent.futures
+import time
 import unittest
+from concurrent.futures import CancelledError
 
 import mpipool
 
@@ -98,3 +100,38 @@ class TestNonlocal(unittest.TestCase):
 
         f = self.pool.submit(fx, 3)
         self.assertEqual(10, f.result())
+
+
+class TestShutdown(unittest.TestCase):
+    def test_wait_nocancel(self):
+        t = time.time()
+        with mpipool.MPIExecutor() as pool:
+            pool.workers_exit()
+            [pool.submit(lambda: time.sleep(0.1)) for _ in range(pool.size * 3)]
+            pool.shutdown(wait=True, cancel_futures=False)
+        self.assertGreater(time.time() - t, 0.2, "should wait all 5 job durations")
+
+    def test_wait_cancel(self):
+        t = time.time()
+        with mpipool.MPIExecutor() as pool:
+            pool.workers_exit()
+            [pool.submit(lambda: time.sleep(0.1)) for _ in range(pool.size * 3)]
+            pool.shutdown(wait=True, cancel_futures=True)
+        self.assertLess(time.time() - t, 0.2, "should wait only 1 job duration")
+
+    def test_nowait_nocancel(self):
+        with mpipool.MPIExecutor() as pool:
+            pool.workers_exit()
+            futures = [pool.submit(lambda: time.sleep(0.01) or 1) for _ in range(pool.size * 5)]
+            pool.shutdown(wait=False, cancel_futures=False)
+            concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+            self.assertEqual([1] * pool.size * 5, [f.result() for f in futures])
+
+    def test_nowait_cancel(self):
+        with mpipool.MPIExecutor() as pool:
+            pool.workers_exit()
+            futures = [pool.submit(lambda: time.sleep(0.01) or 1) for _ in range(pool.size * 5)]
+            pool.shutdown(wait=False, cancel_futures=True)
+            concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+            with self.assertRaises(CancelledError):
+                [f.result() for f in futures]
