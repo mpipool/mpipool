@@ -5,6 +5,7 @@ import logging
 import sys
 import threading
 import time
+import traceback
 import typing
 import warnings
 
@@ -193,9 +194,13 @@ class MPIExecutor(concurrent.futures.Executor):
                     if self._logger.isEnabledFor(logging.DEBUG):
                         self._logger.debug(f"Task result: {result}")
                     self._comm.ssend((0, result), self._main)
-            except Exception as e:
+            except:
                 self._logger.critical(f"Work loop error.", exc_info=sys.exc_info())
-                self._error(e)
+                self._error(
+                    RuntimeError(
+                        f"Critical work loop error occurred. Sending safe string representation:\n\n{traceback.format_exc()}"
+                    )
+                )
 
     def _error(self, exc, exit_code=1):
         self._comm.ssend((exit_code, exc), self._main)
