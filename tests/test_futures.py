@@ -1,4 +1,5 @@
 import concurrent.futures
+import sys
 import time
 import unittest
 from concurrent.futures import CancelledError
@@ -135,3 +136,14 @@ class TestShutdown(unittest.TestCase):
             concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
             with self.assertRaises(CancelledError):
                 [f.result() for f in futures]
+
+
+class TestStress(unittest.TestCase):
+    def test_recursive_limit(self):
+        """
+        Test that the job scheduling system doesn't drift recursively deeper every job.
+        """
+        with mpipool.MPIExecutor() as pool:
+            pool.workers_exit()
+            futures = [pool.submit(lambda: 1) for _ in range(sys.getrecursionlimit() * 10)]
+            concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
